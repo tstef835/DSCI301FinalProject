@@ -1,1 +1,1 @@
-This is my final project done for an Advanced Data Science Tools course.
+This is my final project done for an Advanced Data Science Tools course. All work was completed by me, and much of the content of this report regarding paleobiology and R-related packages was self-taught.
