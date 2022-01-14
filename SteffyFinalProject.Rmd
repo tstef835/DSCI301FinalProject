@@ -1,0 +1,528 @@
+---
+title: "Final Project"
+author: "Tyler Steffy"
+date: "12/1/2021"
+output:
+  html_document: default
+  pdf_document: default
+  
+bibliography: Bibliography.bib
+csl: apa.csl
+nocite: |
+  @ggthemes, @BibTeX, @Bib
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(metacoder)
+library(kableExtra)
+library(usmap)
+library(ggthemes)
+source("CleanData.R")
+dictFile <- here("DataDictionary.csv")
+dict <- read_csv(dictFile, show_col_types = FALSE)
+```
+
+## 1. Description
+
+The dataset used in this project is a dataset obtained from the [Paleobiology Database](https://paleobiodb.org/#/). The database comprises paleobiological records of fossil specimens found since the 19th century via excavation and discovery [@PBDB]. Originally, the dataset used for Project 2 contained data regarding fossil specimens from the Paleozoic era in the mid-upper Appalachian region. However, the dataset used for this project instead contains data regarding fossil specimens of mollusks found globally along the entire geologic timescale (this change was made so that analysis might be more useful.); a mollusk is said to be a soft-bodied invertebrate typically enclosed in a calcium carbonate shell [@Mollusks]. The original dataset used in this project included information regarding the specimen's taxonomy, measurements, life habits, discovery information, data regarding the geological strata from which it came, and a specimen reference number to the database. The original dataset for this project contains 30752 records and 110 fields. After cleaning, the dataset only contains 5680 records and 17 fields. After cleaning, data that was kept included the specimen's measurement information, taxonomical information, age information, and locational data based on the specimen's discovery. Columns from the original dataset that were further cleaned and analyzed specifically include `measurement_type`, `min_ma`, `max_ma`, `average`, `class`, `order`, `family`, `state`, and `county`. Sources used to create references for this report are included in the `Reference` section.
+
+## 2. Loading and Cleaning
+
+### 2.a Data Dictionary
+
+The following tables represent a data dictionary of the fields used after loading and cleaning, what they represent, and a domain of values they can take (if not `NA`). This dictionary was created in Excel and imported into this report, as it was much easier to format a table with lengthier character data there.The process of actually cleaning and loading this data is discussed in the following section.
+
+```{r, echo = FALSE}
+dict %>%
+  kbl(caption = "Data Dictionary") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"))
+```
+
+### 2.b Cleaning
+
+Before even loading the dataset, the csv file was investigated to determine which fields would be appropriate to include. Three-fourths of the fields were not used for several reasons: some fields were repeats of other fields, some had `NA` values for every single record, some were long strings of text data that would not be useful for any kind of analysis, etc. Once this was completed, the file was loaded. Numerical fields were parsed as `col_number()`; the `average` field contained "mm" at the end of every record so it was assumed that every single entry's `average` value was measured in millimeters. `lat` and `lng` were parsed as `col_double()`. `county`, `accepted_name`, and `genus` were parsed as `col_character()`, because there were too many unique names to consider it a factor variable. Every other column was parsed as `col_factor()`.
+
+After loading the data, it was noticed that the data could be pivoted; Several records had the same `specimen_no` but a different `measurement_type`, so the data was pivoted wider with names coming from the `measurement_type` column, and values coming from the `average` column. The `specimen_no` column was removed after this step since every record had a unique specimen, and the `specimen_no` values were relative to the entire [Paleobiology Database](https://paleobiodb.org/#/), so they really had no benefit to being included with this particular dataset. Data was then filtered to include only that which was obtained in the United States, and data whose specimens' parts were shells were filtered. The `nation` and `specimen_part` columns were then removed. All of the column names were renamed for aesthetic purposes.
+
+Following this, each of the taxonomic-related fields were cleaned. Blank entries in the `Class`, `Order`, `Family`, and `Genus` field were changed to `NA`. Similarly, within the `Class`, `Order`, and `Family` fields, some data was depicted as `NO_CLASS_SPECIFIED`, `NO_ORDER_SPECIFIED`, and `NO_FAMILY_SPECIFIED`, respectively---all of this data was changed to `NA`. Additionally, some of the data in the `Genus` column was changed since its value was a single genus with another genus in parentheses following it. This parenthetical extra genus name was also removed from similar data in the `ScientificName` field; names in that field that only contained a genus were changed to have "sp." following the genus so that names without a species could be differentiated from names with a species. This follows the standard guidelines of binomial nomenclature in taxonomy. That is, typically, a species' scientific name should follow the format "*Genus species*", where genus is capitalized and species is not; specimens with a known genus but an unknown species need to at least follow the format "*Genus sp.*" [@Taxa]. Hence, "sp." was added to those `ScientificName` records with just a given genus.
+
+Afterward, `Latitude` and `Longitude` were rounded to two decimal places, blank values in `County` were converted to `NA`, and each measurement type column that came from pivoting was rounded to two decimal places. Records with null `ScientificName` values were filtered out of the dataset. Upon inspection, there were actually no records with missing name data.
+
+Finally, the age data for each record was changed. Originally, `min_ma` gave the minimum relative possible age of the fossil specimen, and `max_ma` gave the maximum relative possible age of the fossil specimen [@PBDB]. Rather than using just these fields, a new field, `AvgRelativeAge`, was created which is just an average of `min_ma` and `max_ma`.
+
+## 3. Exploration
+
+### 3a. Overview
+
+First, to clarify what a class is (and what the other taxonomy-related fields represent), the general sequence of taxonomical ranks seen in biology is kingdom, phylum, class, order, family, genus, species. That is, kingdoms (like Animalia) contain several phyla (like Mollusca) that then contain several classes (like Cephalopoda) which contain several orders, and so forth [@Taxa]. For example, the human species is *Homo sapien*; we are one unique species in the genus *Homo*, which is one genus in the Hominidae family, which is one family in the Primates order, which is an order in the Mammalia class, which is a class in the Chordata phylum, which is finally a phylum in the Animalia kingdom [@HumanTaxa].
+
+Using this information, frequencies of each mollusk class are seen in the table below:
+
+```{r, echo = FALSE}
+data %>% 
+     group_by(Class) %>% 
+     summarize(Records = n()) %>% 
+     arrange(desc(Records)) %>% 
+     kbl(caption = "Class Frequencies") %>%
+     kable_styling(
+        bootstrap_options = c("striped", "hover"))
+```
+
+From this table, it appears that over half the specimens were cephalopods (predatory tentacled mollusks like octopi and squids), roughly 2000 were gastropods (snails/slugs that usually have an outer shell, like whelks and conches), and a modest number of specimens (303) were bivalves (mollusks with two outer shells like clams and scallops) [@MolluskClass]. Scaphopods (mollusks that exist in a tusk-like shell), tergomyae (mollusks that exist in a singular limpet-like shell), and rostroconchiae (mollusks that were closely related to bivalves) all appear to have very few occurrences [@Mollusks]. Grouping the three lowest-occurring classes into an `Other` group, a bar chart of this data is seen below:
+
+```{r, echo = FALSE}
+data %>% 
+     group_by(Class) %>% 
+     mutate(Class = fct_collapse(Class, Other = c("Scaphopoda", "Tergomya", "Rostroconchia"))) %>% 
+     summarize(Records = n()) %>% 
+     ggplot(aes(x = Class, y = Records)) +
+     geom_col(aes(fill = Class), color = "black") +
+     geom_label(aes(label = Records, y = Records + 150), size = 3) +
+     labs(title = "Distribution of Mollusk Classes", x = "Class", y = "Records") +
+     scale_fill_brewer(palette = "BrBG") + 
+     theme(legend.position = "none")
+```
+
+Even grouped together, the lesser-occurring classes still do not occur nearly as much as the other classes.
+
+For some of the remaining taxa variables, rather than providing separate frequency distributions of each column relative to its parent taxon, the `metacoder` package was used to generate heat trees of the mollusk classes based on the frequency of their child ranks and their connection. That is, the taxonomic-related data was parsed into a `taxmap()` object within the `metacoder` package, then graphs were generated to show the connectivity between taxa as well as their relative frequencies [@Meta]. Due to the enormous number of genera occurring in each class, they have been excluded from these heat maps. Also, because the relative frequency of the scaphopods, tergomyae, and rostroconchiae is so minuscule compared to the other three classes, heat trees were not generated for those small classes. Regardless, a heat tree of the bivalve class was generated first:
+
+```{r, echo = FALSE}
+data %>% 
+  select(Class, Order, Family, Genus) %>%
+  mutate(Class = str_replace_na(Class, ""),
+         Order = str_replace_na(Order, ""),
+         Family = str_replace_na(Family, "")) %>%
+  mutate(Class = str_c("c__", Class),
+         Order = str_c("o__", Order),
+         Family = str_c("f__", Family)) %>% 
+  mutate(info = str_c(Class, Order, Family, sep = ";")) %>% 
+  select(info) -> taxons
+
+parse_tax_data(taxons,
+    class_cols = "info",
+    class_sep = ";",
+    class_regex = "^(.+)__(.*)$",
+    class_key = c(tax_rank = "info", tax_name = "taxon_name")) -> taxons
+
+set.seed(61)
+taxons %>% 
+  filter_taxa(taxon_names == "Bivalvia", subtaxa = 2) %>% 
+  heat_tree(node_label = taxon_names,
+            node_size = n_obs,
+            node_color = n_supertaxa,
+            node_label_color = n_supertaxa,
+            edge_size_range = c(.002, .003),
+            node_size_range = c(0.02, 0.05),
+            node_label_color_range = c("black"),
+            node_color_range = RColorBrewer::brewer.pal(3, "BrBG"),
+            node_legend_title = "Key",
+            node_color_axis_label = "Number of Supertaxa",
+            node_size_axis_label = "Frequency",
+            title = "Relative Frequencies of the Bivalvia Subtaxa",
+            title_size = .04,
+            layout = "da",
+            node_size_digits = 0,
+            node_color_digits = 0,
+            repel_labels = TRUE,
+            overlap_avoidance = 100) 
+
+```
+
+From this graph, the key actually represents two variables---frequency of taxon and taxon level, where taxon is the literal value of the datum (like Bivalvia, Pholadida, etc.) and taxon level is where in the sequence of taxa the taxon lies (class, order, family); essentially, a taxon level is one of the `Class`, `Order`, or `Family` fields, and a taxon is a record within those fields. The left side of the key depicts the number of taxa in a higher level above that particular taxon; as that number of supertaxa increases, the color changes. With this graph specifically, bivalves have no supertaxa (relative to this graph), so they are honey-colored nodes with 0 supertaxa. Each of the bivalve orders (Pholadida, Nuculida, etc.) have one common supertaxon. That is, there is one taxon level in the dataset higher in ranking than the associated taxon level of that data (order), and that taxon level is class. As a result, they are all mint green with 1 supertaxon. With this in mind, class nodes are honey-colored, order nodes are mint green, and family nodes are teal. Some nodes have no label; these are nodes from data that was missing. On the other side of the key is frequency values for each taxon. As the number of times a taxon occurred, the node itself grew wider. Hence, the single class node was the widest because it was the root of the entire taxonomic hierarchy (relative to the graph), Nuculida had the next widest node because they occurred more frequently than any other bivalve order. With all of this in mind, some of the most frequently seen taxa (aside from bivalves and the Nuculida order) were the Nuculidae family, Trigoniida order, and the Nuculanida order. Though the Pectinida order did not occur too frequently, it does have the largest number of associated families---7 known families and at least 1 unknown family. There is a chance that it could be more than 1 unknown family because the genera that occur with an unknown family might later be given differing family names.
+
+Next, the gastropod class was investigated:
+
+```{r, echo = FALSE}
+set.seed(56)
+taxons %>% 
+  filter_taxa(taxon_names == "Gastropoda", subtaxa = 2) %>% 
+  heat_tree(node_label = taxon_names,
+            node_size = n_obs,
+            node_color = n_supertaxa,
+            node_label_color = n_supertaxa,
+            edge_size_range = c(.002, .003),
+            node_size_range = c(0.02, 0.04),
+            node_label_color_range = c("black"),
+            node_color_range = RColorBrewer::brewer.pal(3, "BrBG"),
+            node_legend_title = "Key",
+            node_color_axis_label = "Number of Supertaxa",
+            node_size_axis_label = "Frequency",
+            title = "Relative Frequencies of the Gastropoda Subtaxa",
+            title_size = .04,
+            layout = "da",
+            node_size_digits = 0,
+            node_color_digits = 0,
+            repel_labels = TRUE,
+            overlap_avoidance = 100) 
+```
+
+From this heat tree, it is visible that of the gastropods, an unknown order occurred more frequently than any other. However, this does not imply that each of the branching families from that unknown order are actually related---there could be several unknown orders from which these families are branching. The Euomphalina order appears to have the next highest frequency of the orders, with the Euomphalidae family occurring most often within that order. Of the orders within the gastropod class, Murchisoniina appears to have the largest *collection* of different families, with the Gosseletinidae family occurring most often. Finally, the cephalopod class was observed. Due to the fact that cephalopods occurred over 3000 times in the cleaned dataset, taxa that occurred within the cephalopods 20 or less times were excluded to make the heat tree more readable.
+
+```{r, echo = FALSE}
+set.seed(54)
+taxons %>% 
+  filter_taxa(n_obs > 20) %>%
+  filter_taxa(taxon_names == "Cephalopoda", subtaxa = 2) %>% 
+  heat_tree(node_label = taxon_names,
+            node_size = n_obs,
+            node_color = n_supertaxa,
+            node_label_color = n_supertaxa,
+            edge_size_range = c(.002, .003),
+            node_size_range = c(0.02, 0.04),
+            node_label_color_range = c("black"),
+            node_color_range = RColorBrewer::brewer.pal(3, "BrBG"),
+            node_legend_title = "Key",
+            node_color_axis_label = "Number of Supertaxa",
+            node_size_axis_label = "Frequency",
+            title = "Relative Frequencies of Frequent Cephalopoda Subtaxa",
+            title_size = .035,
+            layout = "da",
+            node_size_digits = 0,
+            node_color_digits = 0,
+            repel_labels = TRUE,
+            overlap_avoidance = 100) 
+```
+
+From this heat tree, it appears that the Ceratitida order was the most prevalent cephalopod order with 14 known families and and at least 1 unknown family. Goniatitida cephalopods also appear to be quite common, having 13 known families. Interestingly, with over 3000 cephalopod records, 8 orders within the cephalopods occurred more than 20 times. However, total counts for each order and a total number of families within the cephalopod class can be seen in the tables below:
+
+```{r, echo = FALSE}
+data %>% 
+  filter(Class == "Cephalopoda") %>% 
+  group_by(Order) %>% 
+  summarize(Records = n()) %>% 
+  arrange(desc(Records)) %>% 
+  kbl(caption = "Frequency of Cephalopod Orders") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"))
+
+data %>%
+  filter(Class == "Cephalopoda") %>% 
+  select(-Class) %>% 
+  summarize(`Total Cephalopod Families` = n_distinct(Family)) -> total
+
+data %>%
+  filter(Class == "Cephalopoda") %>% 
+  select(-Class) %>%
+  group_by(Family) %>% 
+  summarize(Records = n()) %>% 
+  filter(Records > 20) %>% 
+  summarize(`Families Occuring More Than 20 Times` = n_distinct(Family)) -> twentyTotal
+
+data %>%
+  filter(Class == "Cephalopoda") %>% 
+  select(-Class) %>%
+  group_by(Family) %>% 
+  summarize(Records = n()) %>% 
+  filter(Records < 10) %>% 
+  summarize(`Families Occuring Less Than 10 Times` = n_distinct(Family)) -> tenTotal
+
+tab <- t(tibble(total, twentyTotal, tenTotal))
+
+tab %>% 
+  kbl(caption = "Frequency of Cephalopod Families") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"))
+```
+
+From the first table, it appears that out of the 10 cephalopod orders, only 2 (Psiloceratida and Pseudorthocerida) occurred less than 20 times. In the second table, it appears that there were a total of 166 cephalopod families, of which only 42 occurred more than 20 times. Hence, only a quarter of the families are depicted in the heat tree. Interestingly, of the 124 families that occurred 20 or less times, *94* occurred less than 10 times. That is, more than half of the cephalopod families barely occurred at all.
+
+Next, each of the measurement types in the dataset were reviewed at first solely based on their magnitudes (not accounting for what they were actually measuring).
+
+```{r, echo = FALSE}
+data %>% 
+  summarize(Statistic = c("Minimum", "Q1", "Median", "Q3", "Maximum", "Mean", "Std. Dev."),
+            Length = round(c(fivenum(Length), mean(Length, na.rm = TRUE), sd(Length, na.rm = TRUE)), 2),
+            Width = round(c(fivenum(Width), mean(Width, na.rm = TRUE), sd(Width, na.rm = TRUE)), 2),
+            Height = round(c(fivenum(Height), mean(Height, na.rm = TRUE), sd(Height, na.rm = TRUE)), 2),
+            Diameter = round(c(fivenum(Diameter), mean(Diameter, na.rm = TRUE), sd(Diameter, na.rm =
+              TRUE)), 2),
+            Inflation = round(c(fivenum(Inflation), mean(Inflation, na.rm = TRUE), sd(Inflation, 
+              na.rm = TRUE)), 2)) %>% 
+  kbl(caption = "Measurement Summary Statistics") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"))
+```
+
+Boxplots of each variable (without outliers) are shown below:
+
+```{r, echo = FALSE}
+data %>% 
+  pivot_longer(cols = c(Length, Width, Diameter, Height, Inflation), 
+               names_to = "Measurement Type", values_to = "Size") %>%
+  ggplot(aes(x = `Measurement Type`, y = Size, fill = `Measurement Type`)) +
+  geom_boxplot(na.rm = TRUE, outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(title = "Distribution of Measurement Values", x = "Measurement", y = "Size") +
+  scale_fill_brewer(palette = "BrBG")
+```
+
+Keeping in mind that every measurement was measured in millimeters, it is interesting to see that most records had measurements that never reached over 100 millimeters (10 centimeters) [@PBDB]. Ignoring outliers, height, inflation, length, and width each appear to be distributed across a relatively similar interval with very close medians. Aside from height and diameter, each distribution appears to be *somewhat* symmetric, and diameter is clearly distributed over the largest interval of ranges.
+
+Finally, the average relative age of the fossils is explored in the following histogram:
+
+```{r, echo = FALSE}
+data %>%
+  ggplot(aes(x = AvgRelativeAge)) +
+  geom_histogram(bins = 47, color = "black", fill = "#01665e") +
+  labs(title = "Distribution of Average Relative Age of Fossils", x = "Average Relative Age (Millions of Years)", y = "Records")
+```
+
+From the distribution, it appears that a majority of the fossils range from around 250 million 325 million years old. However, it appears as though data rose in a slightly normal fashion between 400 and 250 million years, and before 250 million years, data became very infrequent. The peak in data at just before 250 million years might be explained by the fact that the Permian-Triassic extinction event eliminated about 96 percent of all marine life at this time, so obviously the probability of mollusks fossilizing around this time was likely much higher [@GeoTime]. The noticeable gap between the peak in data and the next highest peak at around 260 million years might be explained by the Capitanian extinction event that took place around this time, which eliminated many mollusk groups [@Capitanian]. Of course, these extinction events might have produced an abundance of fossils around this time; though, following these events which wiped a large amount of life forms, there were likely far fewer organisms to endure a basic life cycle and undergo fossilization processes.
+
+### 3b. Variable Relationships
+
+Of the many variables, locational fields seemed to be useful in determining where exactly these fossils were found. Specifically, the number of specimen occurrences by location was investigated. For this, the `usmap` package was used to plot a map of the states in the dataset with their borders [@Maps]. State data was investigated first:
+
+```{r, echo = FALSE}
+stateData <- us_map("state")
+
+data %>% 
+  select(State, Latitude, Longitude) %>% 
+  group_by(State) %>% 
+  rename(full = State) %>% 
+  summarize(Count = n()) -> dataForStateMap
+
+states <- left_join(stateData, dataForStateMap, by = "full")
+states %>% 
+  mutate(Count = ifelse(is.na(Count), 0, Count)) -> states
+
+ggplot(states, aes(x, y)) +  
+  geom_polygon(aes(group = group, fill = Count), color = "black", size = .05) + 
+  coord_equal() +
+  theme_map() +
+  theme(legend.position="right") +
+  scale_fill_gradient(low = "white", high = "#8c510a") +
+  labs(title = "Frequency of State Occurrences") +
+  theme(title = element_text(size = 11))
+```
+
+From the map, it is clear that Texas saw the largest number of fossils in the contiguous United States at over 1500. Nevada also saw a large amount of specimens. In general, western states saw a large majority of the data compared to eastern states, though eastern state specimens do exist to an extent. Some states, like Louisiana, appear to be white; this is due to the fact that the number of specimens in that state is comparable to nothing in relation to what other states saw. Counties were also investigated specifically in the below map. Some of the Louisiana and Alaska data had to be mutated to correspond with the package since those states do not technically have "counties" [@CountyName].
+
+```{r, echo = FALSE}
+countyData <- us_map("county")
+
+data %>% 
+  select(State, County, Latitude, Longitude) %>%
+  group_by(State, County) %>% 
+  mutate(County = ifelse(State != "Alaska" & State != "Louisiana", str_c(County, " County"), County),
+         County = ifelse(State == "Louisiana", str_c(County, " Parish"), County),
+         County = ifelse(County == "Valdez-Cordova", str_c(County, " Census Area"), County),
+         County = ifelse(County == "Matanuska-Susitna", str_c(County, " Borough"), County),
+         County = ifelse(County == "Yakutat", str_c(County, " City and Borough"), County)) %>% 
+  rename(county = County,
+         full = State) %>% 
+  summarize(Count = n(), .groups = "keep") -> dataForCountyMap
+
+counties <- left_join(countyData, dataForCountyMap, by = c("full", "county"))
+counties %>% 
+  mutate(Count = ifelse(is.na(Count), 0, Count)) %>% 
+  filter(Count > 0) -> counties
+
+ggplot() +  
+  geom_polygon(data = counties, aes(x, y, group = group, fill = Count)) +
+  geom_polygon(data = states, aes(x, y, group = group), fill = alpha(.05), color = "black", size = .05) + 
+  coord_equal() +
+  theme_map() +
+  theme(legend.position="right") +
+  scale_fill_gradient(low = "#f6e8c3", high = "#8c510a") +
+  labs(title = "Frequency of County Occurrences") +
+  theme(title = element_text(size = 11))
+```
+
+From the map, it appears that within Texas, most of the occurrences occurred in Brewster County; several other occurrences in the state happened near this county, and some data lies in the northeastern region of the state [@CountyName]. In Nevada, data was found almost exclusively in the northeastern and southern corners of the state. Notably, of the vast number of fossils found in Arizona, they appear to have exclusively been found in Coconino County [@CountyName]. However, there are several records in the dataset with unknown counties, so there might be additional data in Arizona that occurred in a different county. On the eastern portion of the United States, fossils appear to have been most common along a strip of counties in New York. Interestingly, there appears to be no data that came from Pennsylvania. This is particularly interesting as even in Erie County alone, clam and scallop (two types of mollusks) fossils are easy to find along Walnut Creek (from personal experience); it is probable that there is mollusk data in Pennsylvania that just has yet to be entered into the Paleobiology Database.
+
+In addition to location, relative age of the fossils in relation to their taxa was explored. In the following graph, the average interval of relative ages is displayed for each mollusk order.
+
+```{r, fig.width = 10, fig.height = 12, echo = FALSE}
+data %>% 
+  filter(!is.na(Order)) %>% 
+  group_by(Class, Order) %>% 
+  summarize(min = min(MinRelAge),
+            max = max(MaxRelAge),
+            .groups = "keep") %>% 
+  arrange(Class, desc(max)) %>% 
+  mutate(Order = fct_inorder(fct_drop(Order))) -> timeData # I had to use `fct_drop` here because the null factor kept causing errors with `fct_inorder`
+
+timeData %>% 
+  ggplot(aes(x = -max, y = fct_inorder(Order), group = Class, color = Class)) +
+  geom_segment(aes(xend = -min, yend = fct_inorder(Order)), size = 1.5) +
+  labs(title = "Relative Age Range of Mollusk Orders", x = "Millions of Years Ago", y = "") +
+  scale_color_manual(values = c("#01665e", "#35978f", "#80cdc1", "#dfc27d", "#bf812d", "#8c510a")) +
+  scale_x_continuous(labels = c(500, 400, 300, 200, 100, 0))
+```
+
+From this timeline, it appears that gastropods have the largest maximum relative age dating to over 450 million years in the Bellerophontida family. Additionally, cephalopod specimens appear to have an average relative age interval that dates to almost 400 million years; nautilid fossils within that class also span over the longest interval of time. This gastropod and cephalopod data make sense, as both groups first appeared in the fossil record after the Cambrian explosion over 500 million years ago [@GeoTime]. On the contrary, bivalve specimens look to all have dated back on average to no more than just over 300 million years---this seems interesting, considering bivalves first evolved over 400 million years ago [@Mollusks]. There might be a chance that there were bivalves in this geographical area earlier than the data suggest, and it just has not been logged into the Paleobiology Database at this point. Furthermore, there appears to be a large number of orders that have no average relative age after the 250 million year mark. Again, this could be explained by the Permian-Triassic extinction event, when 96% of marine life was eliminated [@GeoTime]. However, several cephalopod orders appear to occur after that event; remarkably, the Nautilida and Ceratitida orders (cephalopod) and the Neritoina order (gastropod) have data both before and after the event.
+
+Finally, interaction between shell height, width, class, and average relative age was explored. However, the three less frequent classes were not explored, as there is not nearly enough data in the cleaned dataset to make any kind of conclusions regarding them. A scatterplot is shown below which depicts the sum of width and age on the x-axis, and height on the y-axis, colored by the data-rich specimen classes:
+
+```{r, echo = FALSE}
+data %>% 
+  filter(Class %in% c("Gastropoda", "Bivalvia", "Cephalopoda"), !is.na(Height), !is.na(Width)) -> modData
+
+modData %>% 
+  ggplot(aes(x = Width + AvgRelativeAge, y = Height, color = Class)) +
+  geom_point(alpha = .3) +
+  labs(title = "Scatterplot of Sum of Width and Average Relative Age against Height", x = "Sum of Width and Age",
+       y = "Height (mm)") +
+  facet_wrap(~ Class) +
+  scale_color_manual(values = c("#8c510a", "#dfc27d", "#01665e")) +
+  theme(legend.position = "none")
+```
+
+From this scatterplot, there really does not seem to be any kind of association between height and the sum of width and age within any of the classes. Cephalopod data is pretty much scattered everywhere, and gastropods and bivalves both are distributed for the most part between values of 250 and 350 along the x-axis, and barely up to 100 along the y-axis. Building a linear model from this scatterplot would probably be a bad idea. However, after investigating for modified variables that might depict any kind of interesting relationship, it was found that creating two new fields which are comprised of the common logarithm of width and the reciprocal of the common logarithm of average relative age, a scatterplot seems to be far less busy:
+
+```{r, echo = FALSE}
+modData %>% 
+  filter(Class %in% c("Gastropoda", "Bivalvia", "Cephalopoda"), !is.na(Height), !is.na(Width)) %>% 
+  mutate(logWidth = log10(Width),
+         recLogAge = 1 / log10(AvgRelativeAge)) -> modData
+
+modData %>% 
+  ggplot(aes(x = logWidth + recLogAge, y = Height, color = Class)) +
+  geom_point(alpha = .3) +
+  labs(title = "Scatterplot of Sum of Log Widths with Reciprocal of Log Ages against Height", 
+       x = "Sum of Log Widths with Reciprocal of Log of Average Relative Ages",
+       y = "Height (mm)") +
+  facet_wrap(~ Class) +
+  scale_color_manual(values = c("#8c510a", "#dfc27d", "#01665e")) +
+  theme(legend.position = "none")
+```
+
+From this graph, there does appear to be at least some moderately positive curvilinear relationship between height and the sum of the modified width and age variables within each of the major classes. Noticably, bivalves look to have the strongest relationship out of the three, while cephalopods appear to have the greatest amount of "noise". While a *linear* model still might not be the best for this data, it would at least be more usable than with the original scatterplot data.
+
+## 4. Model
+
+Of the three variable relationships explored in section 3b, the interaction between shell height, width, class, and average relative age was chosen to further analyze. First, a linear model was created to predict height based on width and age for each class. A graph of the models is seen below:
+
+```{r, echo = FALSE}
+modData %>% 
+  filter(Class == "Cephalopoda") -> cephModData
+
+modData %>% 
+  filter(Class == "Bivalvia") -> bivModData
+
+modData %>% 
+  filter(Class == "Gastropoda") -> gastModData
+
+cephMod <- lm(Height ~ Width + AvgRelativeAge, data = cephModData)
+bivMod <- lm(Height ~ Width + AvgRelativeAge, data = bivModData)
+gastMod <- lm(Height ~ Width + AvgRelativeAge, data = gastModData)
+
+modData %>% 
+  mutate(preds = ifelse(Class == "Cephalopoda", predict(cephMod, cephModData), NA),
+         preds = ifelse(Class == "Bivalvia", predict(bivMod, bivModData), preds),
+         preds = ifelse(Class == "Gastropoda", predict(gastMod, gastModData), preds)) %>% 
+  ggplot(aes(Width + AvgRelativeAge, Height, color = Class)) +
+  geom_point(alpha = .3) +
+  labs(title = "Scatterplot of Sum of Width and Average Relative Age against Height", x = "Sum of Width and Age",
+       y = "Height (mm)") +
+  geom_smooth(method = "lm", se = F, formula = y ~ x) +
+  facet_wrap(~ Class) +
+  scale_color_manual(values = c("#8c510a", "#dfc27d", "#01665e")) +
+  theme(legend.position = "none")
+```
+
+Again, even without investigating the model parameters themselves, it is very clear that this data is too scattered for any kind of model to fit it well. Instead, using the modified width and age variables, the model appears slightly better:
+
+```{r, echo = FALSE}
+cephMod <- lm(Height ~ logWidth + recLogAge, data = cephModData)
+bivMod <- lm(Height ~ logWidth + recLogAge, data = bivModData)
+gastMod <- lm(Height ~ logWidth + recLogAge, data = gastModData)
+
+modData %>% 
+  mutate(preds = ifelse(Class == "Cephalopoda", predict(cephMod, cephModData), NA),
+         preds = ifelse(Class == "Bivalvia", predict(bivMod, bivModData), preds),
+         preds = ifelse(Class == "Gastropoda", predict(gastMod, gastModData), preds)) %>% 
+  ggplot(aes(logWidth + recLogAge, Height, color = Class)) +
+  geom_point(alpha = .3) +
+  geom_smooth(method = "lm", se = F, formula = y ~ x) +
+  labs(title = "Scatterplot of Sum of Log Widths with Reciprocal of Log Ages against Height",
+       x = "Sum of Log Widths with Reciprocal of Log of Average Relative Ages",
+       y = "Height (mm)") +
+  facet_wrap(~ Class) +
+  scale_color_manual(values = c("#8c510a", "#dfc27d", "#01665e")) +
+  theme(legend.position = "none")
+```
+
+It appears as though the bivalve model might be the best fitting, but summaries of each model are seen below:
+
+```{r, echo = FALSE, fig.width = 10}
+cephCoef <- as_tibble(coef(summary(cephMod)))
+gastCoef <- as_tibble(coef(summary(gastMod)))
+bivCoef <- as_tibble(coef(summary(bivMod)))
+
+cephCoef %>% 
+  mutate(` ` = c("Intercept", "logWidth", "recLogAge")) %>% 
+  select(` `, Estimate, `Std. Error`, `t value`, `Pr(>|t|)`) -> cephCoef
+
+bivCoef %>% 
+  mutate(` ` = c("Intercept", "logWidth", "recLogAge")) %>% 
+  select(` `, Estimate, `Std. Error`, `t value`, `Pr(>|t|)`) -> bivCoef
+
+gastCoef %>% 
+  mutate(` ` = c("Intercept", "logWidth", "recLogAge")) %>% 
+  select(` `, Estimate, `Std. Error`, `t value`, `Pr(>|t|)`) -> gastCoef
+
+other <- tribble(
+  ~"", ~Cephalopoda, ~Gastropoda, ~Bivalvia,
+  "Multiple R-squared", summary(cephMod)$r.squared, summary(gastMod)$r.squared, summary(bivMod)$r.squared,
+  "Adjusted R-squared", summary(cephMod)$adj.r.squared, summary(gastMod)$adj.r.squared, summary(bivMod)$adj.r.squared
+)
+
+cephCoef %>% 
+  kbl(caption = "Cephalopoda",
+      digits = 4) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+gastCoef %>% 
+  kbl(caption = "Gastropoda",
+      digits = 4) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+bivCoef %>% 
+  kbl(caption = "Bivalvia",
+      digits = 4) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+other %>% 
+  kbl(caption = "Other Statistics", digits = 4) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+From the tables, it appears that the cephalopod model has p-values of approximately 0 for both `logWidth` and `recLogAge`. From this, the multiple coefficient of determination for the cephalopod model is about .5321, meaning that roughly 53.21 percent of the variation in height in cephalopods can be explained by any linear association with the common logarithm of width and reciprocal of the common logarithm of average relative age. Regardless, it is not a good model for the cephalopods. Even worse, the gastropod model has p-values of approximately 0 and .8949 for `logWidth` and `recLogAge`, respectively. With this, the model's multiple coefficient of determination is about .3933, meaning that roughly 39.33 percent of the variation in gastropod height can be explained by a linear association only with the common logarithm of width; the data do not suggest any linear association with the reciprocal of the common logarithm of average relative age due to the high p-value. Finally, the bivalve model appears to be the best-fitting, with p-values of approximately 0 and .0260. Though the p-value for `logWidth` is statistically significant at most levels, the same argument for `recLogAge` may or may not be made, depending on which level of significance is used. The multiple coefficient of determination is highest out of the three models though, at roughly .6347.
+
+Lastly, residual plots for each model are seen below:
+
+```{r, echo = FALSE}
+modData %>% 
+  mutate(preds = ifelse(Class == "Cephalopoda", predict(cephMod, cephModData), NA),
+         preds = ifelse(Class == "Bivalvia", predict(bivMod, bivModData), preds),
+         preds = ifelse(Class == "Gastropoda", predict(gastMod, gastModData), preds),
+         resids = Height - preds) %>% 
+  ggplot(aes(x = preds, y = resids, color = Class)) +
+  geom_point(alpha = .3) +
+  geom_abline(slope = 0, intercept = 0, color = "black") +
+  facet_wrap(~ Class) +
+  labs(title = "Residual Plot of Predicted Heights",
+       x = "Predicted Height (mm)",
+       y = "Residual (mm)") +
+  facet_wrap(~ Class) +
+  scale_color_manual(values = c("#8c510a", "#dfc27d", "#01665e")) +
+  theme(legend.position = "none")
+```
+
+With each of the residual plots, there appears to be an obvious decreasing trend in residuals as predicted height increases for each class' model. Of course, a linear model for even the modified width and age variables is still not great. In general, it does not seem like a linear model for any modified version of width and age variables would be a good fit. Rather, with the modified variables already created, it seems fairly reasonable that an exponential model might fit the data better.
+
+## 5. Conclusion
+
+To conclude, there is a lot of information from this dataset that can be explored. In general, the [Paleobiology Database](https://paleobiodb.org/#/) provides an extensive amount of data, a lot of which needs significant cleaning. Even with what is actually a relatively small dataset from their website, the number of different taxa occurring within that data is large, and many different different taxa occur even within a specific group of animals like mollusks. It is also seen that many of the fossils were roughly around 250 to 300 million years old, with cephalopods occurring over the largest range of geologic time. Additionally, it is seen that most of the data was collected in the western portion of the United States, specifically in areas around Brewster County, Texas, Cococino County, Arizona, and some portions of Nevada. Lastly, it was seen that though a linear model is not the best in being able to predict shell heights based on shell widths and average relative ages for each mollusk class, there might be some exponential model that could fit the data better. 
+
+Additional questions that remain include whether there are bivalve fossils that exist in the United States older than around 300 million years. It seems fairly reasonable that the data does exist and either has not yet been found or has been found but not yet entered into the database. Additionally, further regression analysis could be done with the data to test for a possible significant exponential relationship between shell height and the modified width and age variables for each class. Moreover, additional shell data could be collected worldwide rather than just the United States (easily included in the original dataset), and further exploration could be done from there. Finally, additional exploration with the other shell measurements could be done. From investigation, it appeared that cephalopods were the only shells with available diameters, and length measurements were only available in gastropods and bivalves. Some analysis could probably be done in each of these areas separately, like testing for equal average shell lengths in each cephalopod order. 
+
+## References

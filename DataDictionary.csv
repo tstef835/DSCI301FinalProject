@@ -1,0 +1,18 @@
+Field,Description,Domain
+ScientificName,Scientific name of the specimen,A valid scientific name (Genus species)
+Class,Taxonomical class of the specimen,From a list of 6 mollusk classes
+Order,Specimen's taxonomical order,From a list of 36 orders
+Family,Specimen's taxonomical family,From a list of 252 families
+Genus,Specimen's genus,A valid genus name
+Longitude,Longitude in which the specimen was found,A real number
+Latitude,Latitude in which the specimen was found,A real number
+State,State in which the specimen was found,A valid US state
+County,County in which the specimen was found,A valid US county
+Length,Length of the specimen's part that was measured (mm),A real positive number
+Width,Width of the specimen's part that was measured (mm),A real positive number
+Height,Height of the specimen's part that was measured (mm),A real positive number
+Diameter,Diameter of the specimen's part that was measured (mm),A real positive number
+Inflation,Inflation of the specimen's part that was measured (mm),A real positive number
+AvgRelativeAge,Average relative age of the specimen based on its maximum possible age and minimum possible age (millions of years),A real positive number
+MinRelAge,Minimum possible relative age of the specimen (millions of years),A real positive number
+MaxRelAge,Maximum possible relative age of the specimen (millions of years),A real positive number
